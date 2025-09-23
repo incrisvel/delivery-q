@@ -1,2 +1,3 @@
 # delivery-q
-Project for communication among Delivery, Client and Order services using RabbitMQ.
+
+Projeto de comunicação entre serviços de Entrega, Pedido e Cliente usando RabbitMQ.
