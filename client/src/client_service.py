@@ -1,3 +1,5 @@
+import os
+from dotenv import load_dotenv
 import pika
 import uuid
 import threading
@@ -7,12 +9,14 @@ class ClientService:
     def __init__(self):
         self.client_id = str(uuid.uuid4())[:8]
 
-        credentials = pika.PlainCredentials(
-            'lokcpyam', 'HEnWwPtx-hu0UWaaIZl__z3E8kFXqAvI')
+        load_dotenv()
 
-        parameters = pika.ConnectionParameters('jackal.rmq.cloudamqp.com',
-                                               5672,
-                                               'lokcpyam',
+        credentials = pika.PlainCredentials(
+            os.getenv('RABBITMQ_USER'), os.getenv('RABBITMQ_PASS') )
+
+        parameters = pika.ConnectionParameters(os.getenv('RABBITMQ_HOST'),
+                                               os.getenv('RABBITMQ_PORT'),
+                                               os.getenv('RABBITMQ_VHOST'),
                                                credentials)
 
         self.connection = pika.BlockingConnection(parameters)
