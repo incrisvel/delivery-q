@@ -1,17 +1,13 @@
-import os
 import random
 import uuid
-import json
 import threading
 import time
-from dotenv import load_dotenv
 import pika
 from core.settings import settings
 
 class OrderService:
     def __init__(self):
         self.service_id = str(uuid.uuid4())[:8]
-        load_dotenv()
 
         credentials = pika.PlainCredentials(
             settings.rabbitmq_user, 
@@ -36,27 +32,31 @@ class OrderService:
         self.channel_consumer = self.connection_consumer.channel()
         
         self.channel_consumer.exchange_declare(exchange='pedido_status_exchange',
-                                               exchange_type='direct',
-                                               durable=True)
+                                            exchange_type='direct',
+                                            durable=True)
         self.channel_consumer.exchange_declare(exchange='entrega_exchange',
-                                               exchange_type='topic',
-                                               durable=True)
+                                            exchange_type='topic',
+                                            durable=True)
         
-        self.pedido_queue = self.channel_consumer.queue_declare(queue='pedido_status_queue', exclusive=True).method.queue
+        self.pedido_queue = self.channel_consumer.queue_declare(
+            queue='pedido_status_queue', durable=True
+        ).method.queue
         self.channel_consumer.queue_bind(exchange='pedido_status_exchange',
-                                         queue=self.pedido_queue,
-                                         routing_key='pedido.status')
-        self.entrega_queue = self.channel_consumer.queue_declare(queue='entrega_queue', exclusive=True).method.queue
+                                        queue=self.pedido_queue,
+                                        routing_key='pedido.status')
+        self.entrega_queue = self.channel_consumer.queue_declare(
+            queue='entrega_queue', durable=True
+        ).method.queue
         self.channel_consumer.queue_bind(exchange='entrega_exchange',
-                                         queue=self.entrega_queue,
-                                         routing_key='entrega.status')
+                                        queue=self.entrega_queue,
+                                        routing_key='entrega.status')
         
         self.channel_consumer.basic_consume(queue=self.pedido_queue,
-                                            on_message_callback=self.on_pedido_status,
+                                            on_message_callback=self.order_status_callback,
                                             auto_ack=False)
         self.channel_consumer.basic_consume(queue=self.entrega_queue,
-                                            on_message_callback=self.on_entrega_status,
-                                            auto_ack=False)
+                                            on_message_callback=self.delivery_callback,
+                                            auto_ack=False) 
 
     def __producer_service_setup(self, parameters):
         self.connection_publisher = pika.BlockingConnection(parameters)
@@ -69,31 +69,40 @@ class OrderService:
     def send_order_confirmation(self, received_body):
         self.channel_publisher.basic_publish(
             exchange='pedido_confirmado_exchange',
-            routing_key='pedido.confirmado.*',
-            body=str('Confirmado: ', received_body),
+            routing_key='pedido.confirmado.1',
+            body=f'Confirmado: {received_body.decode()}',
             properties=pika.BasicProperties(
                 delivery_mode=pika.DeliveryMode.Persistent
             ))
 
-    def order_status_callback(self, ch, method, body):
+    def order_status_callback(self, ch, method, properties, body):
         print(f"[OrderService {self.service_id}] Mensagem recebida: {body.decode()}")
         time.sleep(random.randint(3, 15))
         ch.basic_ack(delivery_tag=method.delivery_tag)
 
         self.send_order_confirmation(body)
 
-    def delivery_callback(self, ch, method, body):
+    def delivery_callback(self, ch, method, properties, body):
         print(f"[OrderService {self.service_id}] Mensagem recebida: {body.decode()}")
         time.sleep(random.randint(3, 15))
         ch.basic_ack(delivery_tag=method.delivery_tag)
 
     def listen(self):
-        self.channel_consumer.basic_consume(queue='pedido_status_queue', on_message_callback=order_status_callback)
-        self.channel_consumer.basic_consume(queue='entrega_queue', on_message_callback=delivery_callback)
         self.channel_consumer.start_consuming()
 
     def run(self):
         threading.Thread(target=self.listen, daemon=True).start()
+        
+        try:
+            while True:
+                time.sleep(1)
+                
+        except KeyboardInterrupt:
+            print(f"\n[Pedido {self.service_id}] Keyboard interruption.")
+        
+        finally:
+            self.connection_consumer.close()
+            print(f"[Pedido {self.service_id}] Conexão fechada.")
 
 if __name__ == '__main__':
     svc = OrderService()

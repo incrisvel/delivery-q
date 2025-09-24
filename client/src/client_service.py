@@ -26,7 +26,8 @@ class ClientService:
 
         self.channel.exchange_declare(
             exchange='pedido_status_exchange',
-            exchange_type='direct'
+            exchange_type='direct',
+            durable=True
           )
         
         print(f"[Cliente {self.client_id}] Serviço iniciado. Aguardando pedidos...")
@@ -36,7 +37,7 @@ class ClientService:
         
         self.channel.basic_publish(exchange='pedido_status_exchange',
                                    routing_key='pedido.status',
-                                   body=str(order),
+                                   body=f'Pedido: {order.__str__()}',
                                    properties=pika.BasicProperties(
                                        delivery_mode=pika.DeliveryMode.Persistent
                                    ))
@@ -73,3 +74,4 @@ class ClientService:
 if __name__ == '__main__':
     client = ClientService()
     client.run()
+    

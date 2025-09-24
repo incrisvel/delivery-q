@@ -1,5 +1,5 @@
 import pika
-from settings import settings
+from core.settings import settings
 
 class RabbitMQConfig:
     
@@ -15,7 +15,6 @@ class RabbitMQConfig:
             settings.rabbitmq_vhost,
             self.credentials
         )
-
         
         self.connection = pika.BlockingConnection(self.parameters)
         self.channel = self.connection.channel()

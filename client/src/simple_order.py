@@ -9,3 +9,6 @@ class SimpleOrder:
         
         if self.quantity> 1:
             self.product+= "s"
+            
+    def __str__(self):
+        return f"{self.quantity} unidade(s) de {self.product} (id: {self.order_id})"
