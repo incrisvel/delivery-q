@@ -95,7 +95,12 @@ class OrderService:
         
         try:
             while True:
-                time.sleep(1)
+                user_input = input(
+                    f"[Pedido {self.service_id}] Pressione 'q' para sair: ")
+                
+                if user_input.lower() == 'q':
+                    print(f"[Pedido {self.service_id}] Encerrando.")
+                    break
                 
         except KeyboardInterrupt:
             print(f"\n[Pedido {self.service_id}] Keyboard interruption.")

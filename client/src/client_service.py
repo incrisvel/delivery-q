@@ -6,7 +6,7 @@ from core.settings import settings
 
 class ClientService:
     def __init__(self):
-        self.client_id = str(uuid.uuid4())[:8]
+        self.service_id = str(uuid.uuid4())[:8]
 
         credentials = pika.PlainCredentials(
             settings.rabbitmq_user, 
@@ -30,7 +30,7 @@ class ClientService:
             durable=True
           )
         
-        print(f"[Cliente {self.client_id}] Serviço iniciado. Aguardando pedidos...")
+        print(f"[Cliente {self.service_id}] Serviço iniciado. Aguardando pedidos...")
 
     def send_order(self):
         order = SimpleOrder()
@@ -42,11 +42,11 @@ class ClientService:
                                        delivery_mode=pika.DeliveryMode.Persistent
                                    ))
 
-        print(f"[Cliente {self.client_id}] Pedido de {order.product} enviado, id: {order.order_id}.")
+        print(f"[Cliente {self.service_id}] Pedido de {order.product} enviado, id: {order.order_id}.")
 
 
     def listen(self):
-        print(f"[Cliente {self.client_id}] Aguardando atualizações...")
+        print(f"[Cliente {self.service_id}] Aguardando atualizações...")
 
 
     def run(self):
@@ -56,20 +56,20 @@ class ClientService:
         try:
             while True:
                 user_input = input(
-                    f"[Cliente {self.client_id}] Pressione Enter para fazer um pedido ou 'q' para sair: ")
+                    f"[Cliente {self.service_id}] Pressione Enter para fazer um pedido ou 'q' para sair: ")
                 
                 if user_input.lower() == 'q':
-                    print(f"[Cliente {self.client_id}] Encerrando.")
+                    print(f"[Cliente {self.service_id}] Encerrando.")
                     break
                 
                 self.send_order()
                 
         except KeyboardInterrupt:
-            print(f"\n[Cliente {self.client_id}] Keyboard interruption.")
+            print(f"\n[Cliente {self.service_id}] Keyboard interruption.")
         
         finally:
             self.connection.close()
-            print(f"[Cliente {self.client_id}] Conexão fechada.")
+            print(f"[Cliente {self.service_id}] Conexão fechada.")
 
 if __name__ == '__main__':
     client = ClientService()
