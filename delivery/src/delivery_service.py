@@ -3,7 +3,7 @@ import uuid
 import threading
 from core.settings import settings
 
-class OrderService:
+class DeliveryService:
     def __init__(self):
         self.service_id = str(uuid.uuid4())[:8]
 
@@ -65,5 +65,5 @@ class OrderService:
             print(f"[Pedido {self.service_id}] Conexão fechada.")
 
 if __name__ == '__main__':
-    orderService = OrderService()
-    orderService.run()
+    deliveryService = DeliveryService()
+    deliveryService.run()
