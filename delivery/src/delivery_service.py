@@ -1,14 +1,11 @@
-import os
-import random
+import pika
 import uuid
-import json
 import threading
 from core.settings import settings
 
-class OrderService:
+class DeliveryService:
     def __init__(self):
         self.service_id = str(uuid.uuid4())[:8]
-        load_dotenv()
 
         credentials = pika.PlainCredentials(
             settings.rabbitmq_user, 
@@ -42,13 +39,31 @@ class OrderService:
 
 
     def listen(self):
-        self.channel_consumer.basic_consume(queue='pedido_status_queue', on_message_callback=order_status_callback)
-        self.channel_consumer.basic_consume(queue='entrega_queue', on_message_callback=delivery_callback)
-        self.channel_consumer.start_consuming()
+        print(f"[Pedido {self.service_id}] Aguardando atualizações...")
+
 
     def run(self):
+        
         threading.Thread(target=self.listen, daemon=True).start()
+        
+        try:
+            while True:
+                user_input = input(
+                    f"[Pedido {self.service_id}] Pressione 'q' para sair: ")
+                
+                if user_input.lower() == 'q':
+                    print(f"[Pedido {self.service_id}] Encerrando.")
+                    break
+                
+                self.send_order()
+                
+        except KeyboardInterrupt:
+            print(f"\n[Pedido {self.service_id}] Keyboard interruption.")
+        
+        finally:
+            self.connection.close()
+            print(f"[Pedido {self.service_id}] Conexão fechada.")
 
 if __name__ == '__main__':
-    svc = OrderService()
-    svc.run()
+    deliveryService = DeliveryService()
+    deliveryService.run()

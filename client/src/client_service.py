@@ -1,23 +1,24 @@
-import os
-from dotenv import load_dotenv
 import pika
 import uuid
 import threading
-from simple_order import SimpleOrder
+from .simple_order import SimpleOrder
+from core.settings import settings
 
 class ClientService:
     def __init__(self):
         self.client_id = str(uuid.uuid4())[:8]
 
-        load_dotenv()
-
         credentials = pika.PlainCredentials(
-            os.getenv('RABBITMQ_USER'), os.getenv('RABBITMQ_PASS') )
+            settings.rabbitmq_user, 
+            settings.rabbitmq_pass
+        )
 
-        parameters = pika.ConnectionParameters(os.getenv('RABBITMQ_HOST'),
-                                               os.getenv('RABBITMQ_PORT'),
-                                               os.getenv('RABBITMQ_VHOST'),
-                                               credentials)
+        parameters = pika.ConnectionParameters(
+            settings.rabbitmq_host,
+            settings.rabbitmq_port,
+            settings.rabbitmq_vhost,
+            credentials
+        )
 
         self.connection = pika.BlockingConnection(parameters)
 
@@ -31,7 +32,7 @@ class ClientService:
         print(f"[Cliente {self.client_id}] Serviço iniciado. Aguardando pedidos...")
 
     def send_order(self):
-        order = SimpleOrder();
+        order = SimpleOrder()
         
         self.channel.basic_publish(exchange='pedido_status_exchange',
                                    routing_key='pedido.status',

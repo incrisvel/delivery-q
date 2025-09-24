@@ -1,13 +1,22 @@
 import pika
+from settings import settings
 
 class RabbitMQConfig:
     
     def __init__(self):
-        self.credentials = pika.PlainCredentials('lokcpyam', 'HEnWwPtx-hu0UWaaIZl__z3E8kFXqAvI')
-        self.parameters = pika.ConnectionParameters('jackal.rmq.cloudamqp.com',
-                                            5672,
-                                            'lokcpyam',
-                                            self.credentials)
+        self.credentials = pika.PlainCredentials(
+            settings.rabbitmq_user, 
+            settings.rabbitmq_pass
+        )
+
+        self.parameters = pika.ConnectionParameters(
+            settings.rabbitmq_host,
+            settings.rabbitmq_port,
+            settings.rabbitmq_vhost,
+            self.credentials
+        )
+
+        
         self.connection = pika.BlockingConnection(self.parameters)
         self.channel = self.connection.channel()
         self.setup_exchanges()
