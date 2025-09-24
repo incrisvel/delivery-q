@@ -37,13 +37,13 @@ class ClientService:
         
         self.channel.basic_publish(exchange='pedido_status_exchange',
                                    routing_key='pedido.status',
-                                   body=f'Pedido: {order.__str__()}',
+                                   body=order.build_json(),
                                    properties=pika.BasicProperties(
                                        delivery_mode=pika.DeliveryMode.Persistent
                                    ))
 
         print(f"[Cliente {self.service_id}] Pedido de {order.product} enviado, id: {order.order_id}.")
-
+        
 
     def listen(self):
         print(f"[Cliente {self.service_id}] Aguardando atualizações...")

@@ -64,7 +64,7 @@ class DeliveryService:
             ))
 
     def order_confirmed_callback(self, ch, method, properties, body):
-        print(f"[Entrega {self.service_id}] Serviço mensagem recebida: {body.decode()}")
+        print(f"[Entrega {self.service_id}] Pedido mensagem recebida: {body.decode()}")
         time.sleep(random.randint(3, 15))
         ch.basic_ack(delivery_tag=method.delivery_tag)
 
