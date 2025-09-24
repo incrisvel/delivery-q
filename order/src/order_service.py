@@ -34,19 +34,39 @@ class OrderService:
         self.channel_consumer.exchange_declare(exchange='pedido_status_exchange',
                                             exchange_type='direct',
                                             durable=True)
+        
+        self.channel_consumer.exchange_declare(exchange='pedido_status_dlx',
+                                            exchange_type='fanout',
+                                            durable=True)
+        
         self.channel_consumer.exchange_declare(exchange='entrega_exchange',
                                             exchange_type='topic',
                                             durable=True)
         
+        args = {
+            'x-message-ttl': 30000,
+            'x-dead-letter-exchange': 'pedido_status_dlx'
+        }
+        
         self.pedido_queue = self.channel_consumer.queue_declare(
-            queue='pedido_status_queue', durable=True
+            queue='pedido_status_queue', durable=True, arguments=args
         ).method.queue
+        
         self.channel_consumer.queue_bind(exchange='pedido_status_exchange',
                                         queue=self.pedido_queue,
                                         routing_key='pedido.status')
+        
+        self.pedido_dead_queue = self.channel_consumer.queue_declare(
+            queue='pedido_status_dead_queue', durable=True
+        ).method.queue
+        
+        self.channel_consumer.queue_bind(exchange='pedido_status_dlx',
+                                        queue=self.pedido_dead_queue)
+        
         self.entrega_queue = self.channel_consumer.queue_declare(
             queue='entrega_queue', durable=True
         ).method.queue
+        
         self.channel_consumer.queue_bind(exchange='entrega_exchange',
                                         queue=self.entrega_queue,
                                         routing_key='entrega.status')
@@ -54,9 +74,14 @@ class OrderService:
         self.channel_consumer.basic_consume(queue=self.pedido_queue,
                                             on_message_callback=self.order_status_callback,
                                             auto_ack=False)
+        
         self.channel_consumer.basic_consume(queue=self.entrega_queue,
                                             on_message_callback=self.delivery_callback,
                                             auto_ack=False) 
+        
+        self.channel_consumer.basic_consume(queue=self.pedido_dead_queue,
+                                        on_message_callback=self.dead_letter_callback,
+                                        auto_ack=True)
 
     def __producer_service_setup(self, parameters):
         self.connection_publisher = pika.BlockingConnection(parameters)
@@ -86,6 +111,9 @@ class OrderService:
         print(f"[OrderService {self.service_id}] Mensagem recebida: {body.decode()}")
         time.sleep(random.randint(3, 15))
         ch.basic_ack(delivery_tag=method.delivery_tag)
+        
+    def dead_letter_callback(self, ch, method, properties, body):
+        print(f"[OrderService {self.service_id}] DEAD LETTER: {body.decode()}")
 
     def listen(self):
         self.channel_consumer.start_consuming()
@@ -104,9 +132,15 @@ class OrderService:
                 
         except KeyboardInterrupt:
             print(f"\n[Pedido {self.service_id}] Keyboard interruption.")
+            
+            if self.channel_consumer.is_open:
+                self.channel_consumer.stop_consuming()
         
         finally:
-            self.connection_consumer.close()
+        
+            if self.connection_consumer.is_open:
+                self.connection_consumer.close()
+                
             print(f"[Pedido {self.service_id}] Conexão fechada.")
 
 if __name__ == '__main__':

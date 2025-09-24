@@ -42,7 +42,7 @@ class ClientService:
                                        delivery_mode=pika.DeliveryMode.Persistent
                                    ))
 
-        print(f"[Cliente {self.service_id}] Pedido de {order.product} enviado, id: {order.order_id}.")
+        print(f"[Cliente {self.service_id}] Pedido de {order.quantity} {order.product} enviado, id: {order.order_id}.")
 
 
     def listen(self):
