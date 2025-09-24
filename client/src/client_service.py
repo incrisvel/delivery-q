@@ -1,7 +1,7 @@
 import pika
 import uuid
 import threading
-from simple_order import SimpleOrder
+from .simple_order import SimpleOrder
 from core.settings import settings
 
 class ClientService:
