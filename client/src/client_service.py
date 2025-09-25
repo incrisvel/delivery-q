@@ -34,10 +34,10 @@ class ClientService:
         self.connection_consumer = pika.BlockingConnection(parameters)
         self.channel_consumer = self.connection_consumer.channel()
         
-        self.channel_publisher.exchange_declare(exchange='entrega_exchange',
+        self.channel_consumer.exchange_declare(exchange='entrega_exchange',
                                                 exchange_type='topic',
                                                 durable=True)
-        self.channel_publisher.exchange_declare(exchange='pedido_confirmado_exchange',
+        self.channel_consumer.exchange_declare(exchange='pedido_confirmado_exchange',
                                                 exchange_type='topic',
                                                 durable=True)
         
@@ -66,7 +66,7 @@ class ClientService:
         self.connection_publisher = pika.BlockingConnection(parameters)
         self.channel_publisher = self.connection_publisher.channel()
         
-        self.channel_consumer.exchange_declare(exchange='pedido_status_exchange',
+        self.channel_publisher.exchange_declare(exchange='pedido_status_exchange',
                                                exchange_type='direct',
                                                durable=True
         )
