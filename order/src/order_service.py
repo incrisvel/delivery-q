@@ -1,3 +1,4 @@
+import json
 import random
 import uuid
 import threading
@@ -122,7 +123,8 @@ class OrderService:
             ))
 
     def order_status_callback(self, ch, method, properties, body):
-        print(f"[OrderService {self.service_id}] Mensagem recebida: {body.decode()}")
+        data = json.loads(body)
+        print(f"[Pedido {self.service_id}] Serviço pedido recebido: {data["id_pedido"]}")
         time.sleep(random.randint(3, 15))
         ch.basic_ack(delivery_tag=method.delivery_tag)
 
