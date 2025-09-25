@@ -43,33 +43,50 @@ class OrderService:
                                             exchange_type='topic',
                                             durable=True)
         
-        args = {
+        self.channel_consumer.exchange_declare(exchange='entrega_dlx',
+                                            exchange_type='fanout',
+                                            durable=True)
+        
+        args_pedido_status = {
             'x-message-ttl': 30000,
             'x-dead-letter-exchange': 'pedido_status_dlx'
         }
+
+        args_entrega = {
+            'x-message-ttl': 30000,
+            'x-dead-letter-exchange': 'entrega_dlx'
+        }
         
         self.pedido_queue = self.channel_consumer.queue_declare(
-            queue='pedido_status_queue', durable=True, arguments=args
+            queue='pedido_status_queue', durable=True, arguments=args_pedido_status
+        ).method.queue
+
+        self.entrega_queue = self.channel_consumer.queue_declare(
+            queue='entrega_queue', durable=True, arguments=args_entrega
         ).method.queue
         
         self.channel_consumer.queue_bind(exchange='pedido_status_exchange',
                                         queue=self.pedido_queue,
                                         routing_key='pedido.status')
         
-        self.pedido_dead_queue = self.channel_consumer.queue_declare(
+        
+        self.pedido_status_dead_queue = self.channel_consumer.queue_declare(
             queue='pedido_status_dead_queue', durable=True
         ).method.queue
         
         self.channel_consumer.queue_bind(exchange='pedido_status_dlx',
-                                        queue=self.pedido_dead_queue)
-        
-        self.entrega_queue = self.channel_consumer.queue_declare(
-            queue='entrega_queue', durable=True
+                                        queue=self.pedido_status_dead_queue)
+
+        self.entrega_dead_queue = self.channel_consumer.queue_declare(
+            queue='entrega_dead_queue', durable=True
         ).method.queue
         
         self.channel_consumer.queue_bind(exchange='entrega_exchange',
                                         queue=self.entrega_queue,
                                         routing_key='entrega.status')
+        
+        self.channel_consumer.queue_bind(exchange='entrega_dlx',
+                                        queue=self.entrega_dead_queue)
         
         self.channel_consumer.basic_consume(queue=self.pedido_queue,
                                             on_message_callback=self.order_status_callback,
@@ -79,8 +96,12 @@ class OrderService:
                                             on_message_callback=self.delivery_callback,
                                             auto_ack=False) 
         
-        self.channel_consumer.basic_consume(queue=self.pedido_dead_queue,
-                                        on_message_callback=self.dead_letter_callback,
+        self.channel_consumer.basic_consume(queue=self.pedido_status_dead_queue,
+                                        on_message_callback=self.dead_letter_order_status_callback,
+                                        auto_ack=True)
+
+        self.channel_consumer.basic_consume(queue=self.entrega_dead_queue,
+                                        on_message_callback=self.dead_letter_delivery_callback,
                                         auto_ack=True)
 
     def __producer_service_setup(self, parameters):
@@ -112,7 +133,10 @@ class OrderService:
         time.sleep(random.randint(3, 15))
         ch.basic_ack(delivery_tag=method.delivery_tag)
         
-    def dead_letter_callback(self, ch, method, properties, body):
+    def dead_letter_order_status_callback(self, ch, method, properties, body):
+        print(f"[OrderService {self.service_id}] DEAD LETTER: {body.decode()}")
+
+    def dead_letter_delivery_callback(self, ch, method, properties, body):
         print(f"[OrderService {self.service_id}] DEAD LETTER: {body.decode()}")
 
     def listen(self):

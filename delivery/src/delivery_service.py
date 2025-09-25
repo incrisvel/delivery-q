@@ -36,15 +36,36 @@ class DeliveryService:
                                             exchange_type='topic',
                                             durable=True)
         
+        self.channel_consumer.exchange_declare(exchange='pedido_confirmado_dlx',
+                                            exchange_type='fanout',
+                                            durable=True)
+        
+        args_pedido_confirmado = {
+            'x-message-ttl': 30000,
+            'x-dead-letter-exchange': 'pedido_confirmado_dlx'
+        }
+        
         self.pedido_confirmado_queue = self.channel_consumer.queue_declare(
-            queue='pedido_confirmado_queue', durable=True
+            queue='pedido_confirmado_queue', durable=True, arguments=args_pedido_confirmado
         ).method.queue
+
         self.channel_consumer.queue_bind(exchange='pedido_confirmado_exchange',
                                         queue=self.pedido_confirmado_queue,
                                         routing_key='pedido.confirmado.entregador')     
         self.channel_consumer.basic_consume(queue=self.pedido_confirmado_queue,
                                             on_message_callback=self.order_confirmed_callback,
                                             auto_ack=False)
+        
+        self.pedido_confirmado_dead_queue = self.channel_consumer.queue_declare(
+            queue='pedido_confirmado_dead_queue', durable=True
+        ).method.queue
+
+        self.channel_consumer.queue_bind(exchange='pedido_confirmado_dlx',
+                                        queue=self.pedido_confirmado_dead_queue)
+        
+        self.channel_consumer.basic_consume(queue=self.pedido_confirmado_dead_queue,
+                                        on_message_callback=self.dead_letter_order_confirmed_callback,
+                                        auto_ack=True)
 
     def __producer_service_setup(self, parameters):
         self.connection_publisher = pika.BlockingConnection(parameters)
@@ -69,6 +90,9 @@ class DeliveryService:
         ch.basic_ack(delivery_tag=method.delivery_tag)
 
         self.send_delivery(body)
+
+    def dead_letter_order_confirmed_callback(self, ch, method, properties, body):
+        print(f"[Cliente {self.service_id}] DEAD LETTER: {body.decode()}")
 
     def listen(self):
         self.channel_consumer.start_consuming()
