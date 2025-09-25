@@ -1,14 +1,22 @@
-from random import randint, choice
 import uuid
+from random import randint, choice
+from pydantic import BaseModel
+from typing import Optional
 
-class SimpleOrder:
-    def __init__(self):
-        self.order_id = str(uuid.uuid4())[:6]
-        self.product = choice(["macarrão", "requeijão", "motosserra", "tinta de parede", "cadeira", "cadeira de rodas gamer"])
-        self.quantity = randint(1, 1000)
-        
-        if self.quantity> 1:
-            self.product+= "s"
-            
-    def __str__(self):
-        return f"{self.quantity} unidade(s) de {self.product} (id: {self.order_id})"
+class SimpleOrder(BaseModel):
+    order_id: str
+    product: str
+    quantity: int
+    unit_price: float
+    status: Optional[str] = None
+    
+    @classmethod
+    def create_random(cls):
+        return cls(
+            order_id = str(uuid.uuid4())[:6],
+            product = choice(["macarrão", "requeijão", "motosserra", "tinta de parede", "cadeira", "cadeira de rodas gamer"]),
+            quantity = randint(1, 1000),
+            unit_price = round(randint(100, 10000) / 100, 2),
+            status = None
+        )
+    
