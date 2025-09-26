@@ -53,7 +53,7 @@ class OrderService:
         ).method.queue 
         self.channel_consumer.queue_bind(exchange='entrega_exchange',
                                         queue=self.entrega_queue,
-                                        routing_key='entrega.status')
+                                        routing_key='entrega.*')
     
         self.channel_consumer.basic_consume(queue=self.pedido_queue,
                                             on_message_callback=self.order_status_callback,
@@ -85,13 +85,15 @@ class OrderService:
         
         time.sleep(random.randint(3, 15))
         
-        if self.orders.get(order_object.order_id) is None:
-            self.orders[order_object.order_id] = order_object
-        
-        self.update_order_status(order_object.order_id, "CONFIRMADO")
-        
         ch.basic_ack(delivery_tag=method.delivery_tag)
 
+        if self.orders.get(order_object.order_id) is None:
+            self.orders[order_object.order_id] = order_object
+
+        self.update_order_status(order_object.order_id, "RECEBIDO")
+        self.print_order_status(order_object)
+        
+        self.update_order_status(order_object.order_id, "CONFIRMADO")
         self.print_order_status(order_object)
         
         self.send_order_confirmation(order_object)
@@ -100,10 +102,10 @@ class OrderService:
         order_json = json.loads(body)
         order_object = SimpleOrder(**order_json)
         
-        time.sleep(random.randint(3, 15))
-        
         if order_object.status is not None:
             self.update_order_status(order_object.order_id, order_object.status)
+
+        time.sleep(random.randint(3, 15))
         
         self.print_order_status(order_object)
         
@@ -127,7 +129,7 @@ class OrderService:
         try:
             while True:
                 user_input = input(
-                    f"[Pedidos {self.service_id}] Pressione 'q' para sair: ")
+                    f"[Pedidos {self.service_id}] Pressione 'q' para sair.\n")
                 
                 if user_input.lower() == 'q':
                     print(f"[Pedidos {self.service_id}] Encerrando.")

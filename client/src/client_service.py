@@ -10,6 +10,7 @@ from core.settings import settings
 class ClientService:
     def __init__(self):
         self.service_id = str(uuid.uuid4())[:8]
+        self.orders = {}
 
         credentials = pika.PlainCredentials(
             settings.rabbitmq_user, 
@@ -41,12 +42,12 @@ class ClientService:
                                                 exchange_type='topic',
                                                 durable=True)
         
-        self.pedido_confirmado_queue = self.channel_consumer.queue_declare(
+        self.notificar_queue = self.channel_consumer.queue_declare(
             queue='notificar_queue', durable=True
         ).method.queue
         self.channel_consumer.queue_bind(exchange='entrega_exchange',
-                                        queue=self.pedido_confirmado_queue,
-                                        routing_key='entrega.notificar')     
+                                        queue=self.notificar_queue,
+                                        routing_key='entrega.*')     
         
         self.pedido_confirmado_queue = self.channel_consumer.queue_declare(
             queue='confirmado_cliente_queue', durable=True
@@ -55,7 +56,7 @@ class ClientService:
                                         queue=self.pedido_confirmado_queue,
                                         routing_key='pedido.confirmado.*') 
         
-        self.channel_consumer.basic_consume(queue=self.pedido_confirmado_queue,
+        self.channel_consumer.basic_consume(queue=self.notificar_queue,
                                             on_message_callback=self.delivery_notification_callback,
                                             auto_ack=False)    
         self.channel_consumer.basic_consume(queue=self.pedido_confirmado_queue,
@@ -74,34 +75,60 @@ class ClientService:
     def delivery_notification_callback(self, ch, method, properties, body):
         order_json = json.loads(body)
         order_object = SimpleOrder(**order_json)
-        
+
+        if self.orders.get(order_object.order_id) is None:
+            self.orders[order_object.order_id] = order_object
+
         time.sleep(random.randint(3, 15))
-        print(f"[Clientes {self.service_id}] Notificação de entrega recebida, pedido {order_object.order_id}. Status: {order_object.status}")
+
+        self.update_order_status(order_object.order_id, "RECEBIDO")
+        self.print_order_status(order_object)
         
         ch.basic_ack(delivery_tag=method.delivery_tag)
         
     def order_confirmed_callback(self, ch, method, properties, body):
         order_json = json.loads(body)
         order_object = SimpleOrder(**order_json)
+
+        if self.orders.get(order_object.order_id) is None:
+            self.orders[order_object.order_id] = order_object
         
         time.sleep(random.randint(3, 15))
-        print(f"[Clientes {self.service_id}] Notificação de confirmação do pedido {order_object.order_id}. Status: {order_object.status}")
-
+        
+        self.update_order_status(order_object.order_id, "CONFIRMADO")
+        self.print_order_status(order_object)
         
         ch.basic_ack(delivery_tag=method.delivery_tag)
  
     def send_order(self):
         order = SimpleOrder.create_random()
+
+        if self.orders.get(order.order_id) is not None:
+            print(f"[Entregas {self.service_id}] Pedido {order.order_id} já existe.")
+            pass
+
+        self.orders[order.order_id] = order
         
-        self.channel_consumer.basic_publish(exchange='pedido_status_exchange',
+        self.channel_publisher.basic_publish(exchange='pedido_status_exchange',
                                    routing_key='pedido.status',
                                    body=order.model_dump_json(),
                                    properties=pika.BasicProperties(
                                        delivery_mode=pika.DeliveryMode.Persistent
                                    ))
-
-        print(f"[Clientes {self.service_id}] Pedido de {order.product} enviado, id: {order.order_id}.")
         
+        
+        self.update_order_status(order.order_id, "ENVIADO")
+        self.print_order_status(order)
+
+    
+    def update_order_status(self, order_id: str, new_status: str):
+        order = self.orders[order_id]
+        if order:
+            order.status = new_status
+            
+    def print_order_status(self, order_object: SimpleOrder):
+        print(f"[Clientes {self.service_id}] Pedido {order_object.order_id} {order_object.status}.")
+
 
     def listen(self):
         self.channel_consumer.start_consuming()
@@ -112,9 +139,10 @@ class ClientService:
         threading.Thread(target=self.listen, daemon=True).start()
         
         try:
+            print(f"[Clientes {self.service_id}] Pressione Enter para fazer um pedido ou 'q' para sair.")
+
             while True:
-                user_input = input(
-                    f"[Clientes {self.service_id}] Pressione Enter para fazer um pedido ou 'q' para sair: ")
+                user_input = input()
                 
                 if user_input.lower() == 'q':
                     print(f"[Clientes {self.service_id}] Encerrando.")

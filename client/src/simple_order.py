@@ -8,7 +8,7 @@ class SimpleOrder(BaseModel):
     product: str
     quantity: int
     unit_price: float
-    status: Optional[str] = None
+    status: str
     
     @classmethod
     def create_random(cls):
@@ -17,6 +17,6 @@ class SimpleOrder(BaseModel):
             product = choice(["macarrão", "requeijão", "motosserra", "tinta de parede", "cadeira", "cadeira de rodas gamer"]),
             quantity = randint(1, 1000),
             unit_price = round(randint(100, 10000) / 100, 2),
-            status = None
+            status = "CRIADO"
         )
     

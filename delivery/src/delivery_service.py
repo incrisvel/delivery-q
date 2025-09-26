@@ -64,19 +64,19 @@ class DeliveryService:
         
         if self.orders.get(order.order_id) is None:
             print(f"[Entregas {self.service_id}] Pedido {order.order_id} não encontrado.")
-            
+                          
         self.update_order_status(order.order_id, "EM ROTA")
         self.print_order_status(order)
         
         self.channel_publisher.basic_publish(
             exchange='entrega_exchange',
-            routing_key='entrega',
+            routing_key='entrega.todos',
             body=order.model_dump_json(),
             properties=pika.BasicProperties(
                 delivery_mode=pika.DeliveryMode.Persistent
             ))
             
-        time.sleep(random.randint(15, 25)) 
+        time.sleep(random.randint(15, 25))
         
     
         self.update_order_status(order.order_id, "ENTREGUE")
@@ -84,7 +84,7 @@ class DeliveryService:
         
         self.channel_publisher.basic_publish(
             exchange='entrega_exchange',
-            routing_key='entrega',
+            routing_key='entrega.todos',
             body=order.model_dump_json(),
             properties=pika.BasicProperties(
                 delivery_mode=pika.DeliveryMode.Persistent
@@ -128,7 +128,7 @@ class DeliveryService:
         try:
             while True:
                 user_input = input(
-                    f"[Entregas {self.service_id}] Pressione 'q' para sair: ")
+                    f"[Entregas {self.service_id}] Pressione 'q' para sair.\n")
                 
                 if user_input.lower() == 'q':
                     print(f"[Entregas {self.service_id}] Encerrando.")
