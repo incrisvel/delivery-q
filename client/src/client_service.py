@@ -27,7 +27,7 @@ class ClientService:
         self.__producer_service_setup(parameters)
                 
         self._consume_thread = None        
-        print(f"[Clientes {self.service_id}] Serviço iniciado. Aguardando pedidos...")
+        print(f"[Clientes {self.service_id}] Serviço iniciado.")
         
 
     def __consumer_service_setup(self, parameters):
@@ -53,7 +53,7 @@ class ClientService:
         ).method.queue
         self.channel_consumer.queue_bind(exchange='pedido_confirmado_exchange',
                                         queue=self.pedido_confirmado_queue,
-                                        routing_key='pedido.confirmado.cliente') 
+                                        routing_key='pedido.confirmado.*') 
         
         self.channel_consumer.basic_consume(queue=self.pedido_confirmado_queue,
                                             on_message_callback=self.delivery_notification_callback,
@@ -104,8 +104,8 @@ class ClientService:
         
 
     def listen(self):
+        self.channel_consumer.start_consuming()
         print(f"[Clientes {self.service_id}] Aguardando atualizações...")
-
 
     def run(self):
         
@@ -130,5 +130,5 @@ class ClientService:
             print(f"[Clientes {self.service_id}] Conexão fechada.")
 
 if __name__ == '__main__':
-    client = ClientService()
-    client.run()
+    svc = ClientService()
+    svc.run()

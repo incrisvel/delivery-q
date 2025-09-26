@@ -28,7 +28,7 @@ class OrderService:
         self.__producer_service_setup(parameters)
 
         self._consume_thread = None
-        print(f"[Pedidos {self.service_id}] Iniciado. Aguardando mensagens...")
+        print(f"[Pedidos {self.service_id}] Serviço iniciado.")
     
     def __consumer_service_setup(self, parameters):
         self.connection_consumer = pika.BlockingConnection(parameters)
@@ -73,7 +73,7 @@ class OrderService:
     def send_order_confirmation(self, order: SimpleOrder):
         self.channel_publisher.basic_publish(
             exchange='pedido_confirmado_exchange',
-            routing_key='pedido.confirmado.*',
+            routing_key='pedido.confirmado.todos',
             body=order.model_dump_json(),
             properties=pika.BasicProperties(
                 delivery_mode=pika.DeliveryMode.Persistent
@@ -84,6 +84,10 @@ class OrderService:
         order_object = SimpleOrder(**order_json)
         
         time.sleep(random.randint(3, 15))
+        
+        if self.orders.get(order_object.order_id) is None:
+            self.orders[order_object.order_id] = order_object
+        
         self.update_order_status(order_object.order_id, "CONFIRMADO")
         
         ch.basic_ack(delivery_tag=method.delivery_tag)
@@ -115,6 +119,7 @@ class OrderService:
 
     def listen(self):
         self.channel_consumer.start_consuming()
+        print(f"[Pedidos {self.service_id}] Aguardando atualizações...")
 
     def run(self):
         threading.Thread(target=self.listen, daemon=True).start()

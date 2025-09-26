@@ -28,7 +28,7 @@ class DeliveryService:
         self.__producer_service_setup(parameters)
 
         self._consume_thread = None
-        print(f"[Entregas {self.service_id}] Serviço iniciado. Aguardando mensagens...")
+        print(f"[Entregas {self.service_id}] Serviço iniciado.")
 
     def __consumer_service_setup(self, parameters):
         self.connection_consumer = pika.BlockingConnection(parameters)
@@ -39,11 +39,11 @@ class DeliveryService:
                                             durable=True)
         
         self.pedido_confirmado_queue = self.channel_consumer.queue_declare(
-            queue='pedido_confirmado_queue', durable=True
+            queue='confirmado_entregador_queue', durable=True
         ).method.queue
         self.channel_consumer.queue_bind(exchange='pedido_confirmado_exchange',
                                         queue=self.pedido_confirmado_queue,
-                                        routing_key='pedido.confirmado.entregador')     
+                                        routing_key='pedido.confirmado.*')     
         
         self.channel_consumer.basic_consume(queue=self.pedido_confirmado_queue,
                                             on_message_callback=self.order_confirmed_callback,
@@ -61,26 +61,30 @@ class DeliveryService:
         if order.status != "CONFIRMADO":
             # fazer algo brutal aqui
             pass
+        
+        if self.orders.get(order.order_id) is None:
+            print(f"[Entregas {self.service_id}] Pedido {order.order_id} não encontrado.")
             
         self.update_order_status(order.order_id, "EM ROTA")
         self.print_order_status(order)
         
         self.channel_publisher.basic_publish(
             exchange='entrega_exchange',
-            routing_key='entrega.*',
+            routing_key='entrega',
             body=order.model_dump_json(),
             properties=pika.BasicProperties(
                 delivery_mode=pika.DeliveryMode.Persistent
             ))
-        
+            
         time.sleep(random.randint(15, 25)) 
         
+    
         self.update_order_status(order.order_id, "ENTREGUE")
         self.print_order_status(order)
         
         self.channel_publisher.basic_publish(
             exchange='entrega_exchange',
-            routing_key='entrega.*',
+            routing_key='entrega',
             body=order.model_dump_json(),
             properties=pika.BasicProperties(
                 delivery_mode=pika.DeliveryMode.Persistent
@@ -89,6 +93,9 @@ class DeliveryService:
     def order_confirmed_callback(self, ch, method, properties, body):
         order_json = json.loads(body)
         order_object = SimpleOrder(**order_json)
+        
+        if self.orders.get(order_object.order_id) is None:
+            self.orders[order_object.order_id] = order_object
         
         time.sleep(random.randint(3, 15))
         
@@ -113,6 +120,7 @@ class DeliveryService:
 
     def listen(self):
         self.channel_consumer.start_consuming()
+        print(f"[Entregas {self.service_id}] Aguardando atualizações...")
 
     def run(self):
         threading.Thread(target=self.listen, daemon=True).start()
