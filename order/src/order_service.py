@@ -134,7 +134,8 @@ class OrderService:
         print(f"[Pedidos {self.service_id}] Aguardando atualizações...")
 
     def run(self):
-        threading.Thread(target=self.listen, daemon=True).start()
+        consumer_thread = threading.Thread(target=self.listen, daemon=True)
+        consumer_thread.start()
         
         try:
             while True:
@@ -149,7 +150,16 @@ class OrderService:
             print(f"\n[Pedidos {self.service_id}] Keyboard interruption.")
         
         finally:
-            self.connection_consumer.close()
+            if self.channel_consumer.is_open:
+                self.channel_consumer.connection.add_callback_threadsafe(
+                    lambda: self.channel_consumer.stop_consuming()  
+                )
+
+            consumer_thread.join()
+            
+            if self.connection_consumer.is_open:
+                self.connection_consumer.close()
+                
             print(f"[Pedidos {self.service_id}] Conexão fechada.")
 
 if __name__ == '__main__':

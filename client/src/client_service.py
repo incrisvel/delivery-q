@@ -154,7 +154,8 @@ class ClientService:
 
     def run(self):
         
-        threading.Thread(target=self.listen, daemon=True).start()
+        consumer_thread = threading.Thread(target=self.listen, daemon=True)
+        consumer_thread.start()
         
         try:
             print(f"[Clientes {self.service_id}] Pressione Enter para fazer um pedido ou 'q' para sair.")
@@ -172,7 +173,16 @@ class ClientService:
             print(f"\n[Clientes {self.service_id}] Keyboard interruption.")
         
         finally:
-            self.connection_consumer.close()
+            if self.channel_consumer.is_open:
+                self.channel_consumer.connection.add_callback_threadsafe(
+                    lambda: self.channel_consumer.stop_consuming()  
+                )
+
+            consumer_thread.join()
+            
+            if self.connection_consumer.is_open:
+                self.connection_consumer.close()
+            
             print(f"[Clientes {self.service_id}] Conexão fechada.")
 
 if __name__ == '__main__':
