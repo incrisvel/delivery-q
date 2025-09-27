@@ -59,36 +59,34 @@ class DeliveryService:
 
     def send_delivery(self, order: SimpleOrder):
         if order.status != "CONFIRMADO":
-            # fazer algo brutal aqui
-            pass
-        
-        if self.orders.get(order.order_id) is None:
-            print(f"[Entregas {self.service_id}] Pedido {order.order_id} não encontrado.")
-                          
-        self.update_order_status(order.order_id, "EM ROTA")
-        self.print_order_status(order)
+            print(f"[Entregas {self.service_id}] Pedido {order.order_id} não confirmado.")
+            return
+                  
+        order_id = order.order_id    
+        self.update_order_status(order_id, "EM ROTA")
+        self.print_order_status(order_id)
         
         self.channel_publisher.basic_publish(
             exchange='entrega_exchange',
             routing_key='entrega.todos',
-            body=order.model_dump_json(),
+            body=self.orders[order.order_id].model_dump_json(),
             properties=pika.BasicProperties(
                 delivery_mode=pika.DeliveryMode.Persistent
             ))
             
         time.sleep(random.randint(15, 25))
-        
     
-        self.update_order_status(order.order_id, "ENTREGUE")
-        self.print_order_status(order)
+        order_id = order.order_id 
+        self.update_order_status(order_id, "ENTREGUE")
+        self.print_order_status(order_id)
         
         self.channel_publisher.basic_publish(
             exchange='entrega_exchange',
             routing_key='entrega.todos',
-            body=order.model_dump_json(),
+            body=self.orders[order.order_id].model_dump_json(),
             properties=pika.BasicProperties(
                 delivery_mode=pika.DeliveryMode.Persistent
-            ))                     
+            ))              
 
     def order_confirmed_callback(self, ch, method, properties, body):
         order_json = json.loads(body)
@@ -96,13 +94,17 @@ class DeliveryService:
         
         if self.orders.get(order_object.order_id) is None:
             self.orders[order_object.order_id] = order_object
+            
+        if self.orders[order_object.order_id].status in ["RECEBIDO", "FINALIZADO"]:
+            print(f"[Entregas {self.service_id}] Pedido {order_object.order_id} já foi finalizado.")
+            ch.basic_ack(delivery_tag=method.delivery_tag)
+            return
         
         time.sleep(random.randint(3, 15))
         
-        if order_object.status is not None:
-            self.update_order_status(order_object.order_id, order_object.status)
-        
-        self.print_order_status(order_object)
+        order_id = order_object.order_id
+        self.update_order_status(order_id, order_object.status)    
+        self.print_order_status(order_id)
 
         time.sleep(random.randint(3, 15))
         
@@ -115,8 +117,10 @@ class DeliveryService:
         if order:
             order.status = new_status
 
-    def print_order_status(self, order_object: SimpleOrder):
-        print(f"[Entregas {self.service_id}] Pedido {order_object.order_id} {order_object.status}.")
+    def print_order_status(self, order_id: str):
+        order_object = self.orders[order_id]
+        if order_object is not None:
+            print(f"[Entregas {self.service_id}] Pedido {order_object.order_id} {order_object.status}.")
 
     def listen(self):
         self.channel_consumer.start_consuming()

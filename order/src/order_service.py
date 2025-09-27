@@ -41,24 +41,24 @@ class OrderService:
                                             exchange_type='topic',
                                             durable=True)
         
-        self.pedido_queue = self.channel_consumer.queue_declare(
+        self.pedido_status_queue = self.channel_consumer.queue_declare(
             queue='pedido_status_queue', durable=True
         ).method.queue
         self.channel_consumer.queue_bind(exchange='pedido_status_exchange',
-                                        queue=self.pedido_queue,
+                                        queue=self.pedido_status_queue,
                                         routing_key='pedido.status')
         
-        self.entrega_queue = self.channel_consumer.queue_declare(
-            queue='entrega_queue', durable=True
+        self.entrega_status_queue = self.channel_consumer.queue_declare(
+            queue='entrega_status_queue', durable=True
         ).method.queue 
         self.channel_consumer.queue_bind(exchange='entrega_exchange',
-                                        queue=self.entrega_queue,
+                                        queue=self.entrega_status_queue,
                                         routing_key='entrega.*')
     
-        self.channel_consumer.basic_consume(queue=self.pedido_queue,
+        self.channel_consumer.basic_consume(queue=self.pedido_status_queue,
                                             on_message_callback=self.order_status_callback,
                                             auto_ack=False)
-        self.channel_consumer.basic_consume(queue=self.entrega_queue,
+        self.channel_consumer.basic_consume(queue=self.entrega_status_queue,
                                             on_message_callback=self.delivery_callback,
                                             auto_ack=False) 
 
@@ -74,7 +74,7 @@ class OrderService:
         self.channel_publisher.basic_publish(
             exchange='pedido_confirmado_exchange',
             routing_key='pedido.confirmado.todos',
-            body=order.model_dump_json(),
+            body=self.orders[order.order_id].model_dump_json(),
             properties=pika.BasicProperties(
                 delivery_mode=pika.DeliveryMode.Persistent
             ))
@@ -84,31 +84,39 @@ class OrderService:
         order_object = SimpleOrder(**order_json)
         
         time.sleep(random.randint(3, 15))
-        
-        ch.basic_ack(delivery_tag=method.delivery_tag)
 
         if self.orders.get(order_object.order_id) is None:
             self.orders[order_object.order_id] = order_object
-
-        self.update_order_status(order_object.order_id, "RECEBIDO")
-        self.print_order_status(order_object)
         
-        self.update_order_status(order_object.order_id, "CONFIRMADO")
-        self.print_order_status(order_object)
+        order_id = order_object.order_id
         
-        self.send_order_confirmation(order_object)
+        if order_object.status == "RECEBIDO":
+            self.update_order_status(order_id, "FINALIZADO")
+            self.print_order_status(order_id)
+            
+            ch.basic_ack(delivery_tag=method.delivery_tag)
+            
+            return                
+        
+        self.update_order_status(order_id, "CONFIRMADO")
+        self.print_order_status(order_id)
+        
+        ch.basic_ack(delivery_tag=method.delivery_tag)
+        
+        self.send_order_confirmation(self.orders[order_object.order_id])
 
     def delivery_callback(self, ch, method, properties, body):
         order_json = json.loads(body)
         order_object = SimpleOrder(**order_json)
         
-        if order_object.status is not None:
-            self.update_order_status(order_object.order_id, order_object.status)
+        if self.orders.get(order_object.order_id) is None:
+            self.orders[order_object.order_id] = order_object
 
         time.sleep(random.randint(3, 15))
         
-        self.print_order_status(order_object)
-        
+        self.update_order_status(order_object.order_id, order_object.status)
+        self.print_order_status(order_object.order_id)
+    
         ch.basic_ack(delivery_tag=method.delivery_tag)
         
     def update_order_status(self, order_id: str, new_status: str):
@@ -116,8 +124,10 @@ class OrderService:
         if order:
             order.status = new_status
             
-    def print_order_status(self, order_object: SimpleOrder):
-        print(f"[Pedidos {self.service_id}] Pedido {order_object.order_id} {order_object.status}.")
+    def print_order_status(self, order_id: str):
+        order_object = self.orders[order_id]
+        if order_object is not None:
+            print(f"[Pedidos {self.service_id}] Pedido {order_object.order_id} {order_object.status}.")
 
     def listen(self):
         self.channel_consumer.start_consuming()

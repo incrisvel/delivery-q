@@ -78,11 +78,28 @@ class ClientService:
 
         if self.orders.get(order_object.order_id) is None:
             self.orders[order_object.order_id] = order_object
-
+            
+        if order_object.status == "RECEBIDO":
+            print(f"[Clientes {self.service_id}] Pedido {order_object.order_id} já foi recebido.")
+            return
+        
         time.sleep(random.randint(3, 15))
 
-        self.update_order_status(order_object.order_id, "RECEBIDO")
-        self.print_order_status(order_object)
+        if order_object.status == "ENTREGUE":
+            order_id = order_object.order_id
+            self.update_order_status(order_id, "RECEBIDO")
+            self.print_order_status(order_id)
+           
+            self.channel_publisher.basic_publish(exchange='pedido_status_exchange',
+                            routing_key='pedido.status',
+                            body=self.orders[order_object.order_id].model_dump_json(),
+                            properties=pika.BasicProperties(
+                                delivery_mode=pika.DeliveryMode.Persistent
+            ))
+        else:
+            order_id = order_object.order_id
+            self.update_order_status(order_id, order_object.status)
+            self.print_order_status(order_id)
         
         ch.basic_ack(delivery_tag=method.delivery_tag)
         
@@ -95,8 +112,9 @@ class ClientService:
         
         time.sleep(random.randint(3, 15))
         
-        self.update_order_status(order_object.order_id, "CONFIRMADO")
-        self.print_order_status(order_object)
+        order_id = order_object.order_id
+        self.update_order_status(order_id, order_object.status)
+        self.print_order_status(order_id)
         
         ch.basic_ack(delivery_tag=method.delivery_tag)
  
@@ -105,7 +123,7 @@ class ClientService:
 
         if self.orders.get(order.order_id) is not None:
             print(f"[Entregas {self.service_id}] Pedido {order.order_id} já existe.")
-            pass
+            return
 
         self.orders[order.order_id] = order
         
@@ -116,19 +134,19 @@ class ClientService:
                                        delivery_mode=pika.DeliveryMode.Persistent
                                    ))
         
-        
-        self.update_order_status(order.order_id, "ENVIADO")
-        self.print_order_status(order)
-
+        order_id = order.order_id
+        self.update_order_status(order_id, "ENVIADO")
+        self.print_order_status(order_id)
     
     def update_order_status(self, order_id: str, new_status: str):
         order = self.orders[order_id]
         if order:
             order.status = new_status
             
-    def print_order_status(self, order_object: SimpleOrder):
-        print(f"[Clientes {self.service_id}] Pedido {order_object.order_id} {order_object.status}.")
-
+    def print_order_status(self, order_id: str):
+        order_object = self.orders[order_id]
+        if order_object is not None:
+            print(f"[Clientes {self.service_id}] Pedido {order_object.order_id} {order_object.status}.")
 
     def listen(self):
         self.channel_consumer.start_consuming()
