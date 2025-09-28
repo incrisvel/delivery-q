@@ -33,31 +33,39 @@ class OrderService:
     def __consumer_service_setup(self, parameters):
         self.connection_consumer = pika.BlockingConnection(parameters)
         self.channel_consumer = self.connection_consumer.channel()
-        
+        self.__set_pedido_status_service()
+        self.__set_entrega_service()
+    
+    def __set_pedido_status_service(self):
         self.channel_consumer.exchange_declare(exchange='pedido_status_exchange',
-                                            exchange_type='direct',
-                                            durable=True)
-        self.channel_consumer.exchange_declare(exchange='entrega_exchange',
-                                            exchange_type='topic',
-                                            durable=True)
+                                    exchange_type='direct',
+                                    durable=True)
         
         self.pedido_status_queue = self.channel_consumer.queue_declare(
             queue='pedido_status_queue', durable=True
         ).method.queue
+
         self.channel_consumer.queue_bind(exchange='pedido_status_exchange',
                                         queue=self.pedido_status_queue,
                                         routing_key='pedido.status')
         
+        self.channel_consumer.basic_consume(queue=self.pedido_status_queue,
+                                            on_message_callback=self.order_status_callback,
+                                            auto_ack=False)
+        
+    def __set_entrega_service(self):
+        self.channel_consumer.exchange_declare(exchange='entrega_exchange',
+                                            exchange_type='topic',
+                                            durable=True)
+        
         self.entrega_status_queue = self.channel_consumer.queue_declare(
             queue='entrega_status_queue', durable=True
         ).method.queue 
+
         self.channel_consumer.queue_bind(exchange='entrega_exchange',
                                         queue=self.entrega_status_queue,
                                         routing_key='entrega.*')
     
-        self.channel_consumer.basic_consume(queue=self.pedido_status_queue,
-                                            on_message_callback=self.order_status_callback,
-                                            auto_ack=False)
         self.channel_consumer.basic_consume(queue=self.entrega_status_queue,
                                             on_message_callback=self.delivery_callback,
                                             auto_ack=False) 

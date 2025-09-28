@@ -41,6 +41,7 @@ class DeliveryService:
         self.pedido_confirmado_queue = self.channel_consumer.queue_declare(
             queue='confirmado_entregador_queue', durable=True
         ).method.queue
+        
         self.channel_consumer.queue_bind(exchange='pedido_confirmado_exchange',
                                         queue=self.pedido_confirmado_queue,
                                         routing_key='pedido.confirmado.*')     

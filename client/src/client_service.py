@@ -34,31 +34,39 @@ class ClientService:
     def __consumer_service_setup(self, parameters):
         self.connection_consumer = pika.BlockingConnection(parameters)
         self.channel_consumer = self.connection_consumer.channel()
-        
+        self.__set_entrega_service()
+        self.__set_pedido_confirmado_service()
+
+    def __set_entrega_service(self):
         self.channel_consumer.exchange_declare(exchange='entrega_exchange',
-                                                exchange_type='topic',
-                                                durable=True)
-        self.channel_consumer.exchange_declare(exchange='pedido_confirmado_exchange',
-                                                exchange_type='topic',
-                                                durable=True)
+                                        exchange_type='topic',
+                                        durable=True)
         
         self.notificar_queue = self.channel_consumer.queue_declare(
             queue='notificar_queue', durable=True
         ).method.queue
-        self.channel_consumer.queue_bind(exchange='entrega_exchange',
-                                        queue=self.notificar_queue,
-                                        routing_key='entrega.*')     
         
+        self.channel_consumer.queue_bind(exchange='entrega_exchange',
+                                queue=self.notificar_queue,
+                                routing_key='entrega.*')
+        
+        self.channel_consumer.basic_consume(queue=self.notificar_queue,
+                                    on_message_callback=self.delivery_notification_callback,
+                                    auto_ack=False)
+        
+    def __set_pedido_confirmado_service(self):
+        self.channel_consumer.exchange_declare(exchange='pedido_confirmado_exchange',
+                                                exchange_type='topic',
+                                                durable=True)
+
         self.pedido_confirmado_queue = self.channel_consumer.queue_declare(
             queue='confirmado_cliente_queue', durable=True
         ).method.queue
+
         self.channel_consumer.queue_bind(exchange='pedido_confirmado_exchange',
                                         queue=self.pedido_confirmado_queue,
                                         routing_key='pedido.confirmado.*') 
         
-        self.channel_consumer.basic_consume(queue=self.notificar_queue,
-                                            on_message_callback=self.delivery_notification_callback,
-                                            auto_ack=False)    
         self.channel_consumer.basic_consume(queue=self.pedido_confirmado_queue,
                                             on_message_callback=self.order_confirmed_callback,
                                             auto_ack=False)
