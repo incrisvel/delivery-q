@@ -37,34 +37,74 @@ class OrderService:
         self.__set_entrega_service()
     
     def __set_pedido_status_service(self):
+        self.channel_consumer.exchange_declare(exchange='pedido_status_dlx',
+                                               exchange_type='fanout',
+                                               durable=True)
+
+        self.pedido_status_dead_queue = self.channel_consumer.queue_declare(
+            queue='pedido_status_dead_queue', durable=True
+        ).method.queue
+
+        self.channel_consumer.queue_bind(exchange='pedido_status_dlx',
+                                         queue=self.pedido_status_dead_queue)
+
+        self.channel_consumer.basic_consume(queue=self.pedido_status_dead_queue,
+                                            on_message_callback=self.dl_pedido_status_callback,
+                                            auto_ack=False)
+
         self.channel_consumer.exchange_declare(exchange='pedido_status_exchange',
-                                    exchange_type='direct',
-                                    durable=True)
+                                               exchange_type='direct',
+                                               durable=True)
         
+        arguments = {
+            'x-message-ttl': 30000,
+            'x-dead-letter-exchange': 'pedido_status_dlx'
+        }
+
         self.pedido_status_queue = self.channel_consumer.queue_declare(
-            queue='pedido_status_queue', durable=True
+            queue='pedido_status_queue', durable=True, arguments=arguments
         ).method.queue
 
         self.channel_consumer.queue_bind(exchange='pedido_status_exchange',
-                                        queue=self.pedido_status_queue,
-                                        routing_key='pedido.status')
+                                         queue=self.pedido_status_queue,
+                                         routing_key='pedido.status')
         
         self.channel_consumer.basic_consume(queue=self.pedido_status_queue,
                                             on_message_callback=self.order_status_callback,
                                             auto_ack=False)
         
     def __set_entrega_service(self):
+        self.channel_consumer.exchange_declare(exchange='entrega_dlx',
+                                               exchange_type='fanout',
+                                               durable=True)
+
+        self.entrega_dead_queue = self.channel_consumer.queue_declare(
+            queue='entrega_dead_queue', durable=True
+        ).method.queue
+
+        self.channel_consumer.queue_bind(exchange='entrega_dlx',
+                                         queue=self.entrega_dead_queue)
+
+        self.channel_consumer.basic_consume(queue=self.entrega_dead_queue,
+                                            on_message_callback=self.dl_entrega_callback,
+                                            auto_ack=False)
+
         self.channel_consumer.exchange_declare(exchange='entrega_exchange',
-                                            exchange_type='topic',
-                                            durable=True)
+                                               exchange_type='topic',
+                                               durable=True)
         
+        arguments = {
+            'x-message-ttl': 30000,
+            'x-dead-letter-exchange': 'entrega_dlx'
+        }
+
         self.entrega_status_queue = self.channel_consumer.queue_declare(
-            queue='entrega_status_queue', durable=True
+            queue='entrega_status_queue', durable=True, arguments=arguments
         ).method.queue 
 
         self.channel_consumer.queue_bind(exchange='entrega_exchange',
-                                        queue=self.entrega_status_queue,
-                                        routing_key='entrega.*')
+                                         queue=self.entrega_status_queue,
+                                         routing_key='entrega.*')
     
         self.channel_consumer.basic_consume(queue=self.entrega_status_queue,
                                             on_message_callback=self.delivery_callback,
@@ -101,16 +141,12 @@ class OrderService:
         if order_object.status == "RECEBIDO":
             self.update_order_status(order_id, "FINALIZADO")
             self.print_order_status(order_id)
-            
             ch.basic_ack(delivery_tag=method.delivery_tag)
-            
             return                
         
         self.update_order_status(order_id, "CONFIRMADO")
         self.print_order_status(order_id)
-        
         ch.basic_ack(delivery_tag=method.delivery_tag)
-        
         self.send_order_confirmation(self.orders[order_object.order_id])
 
     def delivery_callback(self, ch, method, properties, body):
@@ -124,8 +160,57 @@ class OrderService:
         
         self.update_order_status(order_object.order_id, order_object.status)
         self.print_order_status(order_object.order_id)
-    
         ch.basic_ack(delivery_tag=method.delivery_tag)
+
+    def _extract_original_routing_key(self, properties, default):
+        try:
+            headers = properties.headers or {}
+            x_death = headers.get('x-death')
+            if x_death and isinstance(x_death, list) and len(x_death) > 0:
+                first = x_death[0]
+                if 'routing-keys' in first and isinstance(first['routing-keys'], list) and len(first['routing-keys']) > 0:
+                    return first['routing-keys'][0]
+                if 'routing_key' in first:
+                    return first['routing_key']
+        except Exception:
+            pass
+        return default
+
+    def dl_pedido_status_callback(self, ch, method, properties, body):
+        routing_key = self._extract_original_routing_key(properties, default='pedido.status.retry')
+        try:
+            self.channel_publisher.basic_publish(
+                exchange='pedido_status_exchange',
+                routing_key=routing_key,
+                body=body,
+                properties=pika.BasicProperties(
+                    delivery_mode=pika.DeliveryMode.Persistent,
+                    headers=properties.headers
+                )
+            )
+            print(f"[Pedidos {self.service_id}] Mensagem da DLQ pedido_status republicada para pedido_status_exchange ({routing_key}).")
+            ch.basic_ack(delivery_tag=method.delivery_tag)
+        except Exception as e:
+            print(f"[Pedidos {self.service_id}] Falha ao republicar da DLQ pedido_status: {e}. Requeue na DLQ.")
+            ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
+
+    def dl_entrega_callback(self, ch, method, properties, body):
+        routing_key = self._extract_original_routing_key(properties, default='entrega.retry')
+        try:
+            self.channel_publisher.basic_publish(
+                exchange='entrega_exchange',
+                routing_key=routing_key,
+                body=body,
+                properties=pika.BasicProperties(
+                    delivery_mode=pika.DeliveryMode.Persistent,
+                    headers=properties.headers
+                )
+            )
+            print(f"[Pedidos {self.service_id}] Mensagem da DLQ entrega republicada para entrega_exchange ({routing_key}).")
+            ch.basic_ack(delivery_tag=method.delivery_tag)
+        except Exception as e:
+            print(f"[Pedidos {self.service_id}] Falha ao republicar da DLQ entrega: {e}. Requeue na DLQ.")
+            ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
         
     def update_order_status(self, order_id: str, new_status: str):
         order = self.orders[order_id]
