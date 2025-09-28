@@ -48,8 +48,7 @@ class ClientService:
 
         self.channel_consumer.queue_bind(exchange='entrega_dlx',
                                         queue=self.entrega_dead_queue)
-        
-        # change: auto_ack=False so we ack only after successful republish
+
         self.channel_consumer.basic_consume(queue=self.entrega_dead_queue,
                                         on_message_callback=self.dl_delivery_callback,
                                         auto_ack=False)
@@ -86,7 +85,6 @@ class ClientService:
         self.channel_consumer.queue_bind(exchange='pedido_confirmado_dlx',
                                         queue=self.pedido_confirmado_dead_queue)
         
-        # change: auto_ack=False so we ack only after successful republish
         self.channel_consumer.basic_consume(queue=self.pedido_confirmado_dead_queue,
                                         on_message_callback=self.dl_order_confirmed_callback,
                                         auto_ack=False)

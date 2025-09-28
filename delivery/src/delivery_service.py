@@ -34,7 +34,6 @@ class DeliveryService:
         self.connection_consumer = pika.BlockingConnection(parameters)
         self.channel_consumer = self.connection_consumer.channel()
         
-        # DLX + dead queue for pedido_confirmado
         self.channel_consumer.exchange_declare(exchange='pedido_confirmado_dlx',
                                               exchange_type='fanout',
                                               durable=True)
@@ -46,20 +45,16 @@ class DeliveryService:
         self.channel_consumer.queue_bind(exchange='pedido_confirmado_dlx',
                                         queue=self.pedido_confirmado_dead_queue)
 
-        # consume the dead queue to republish back to the original exchange (retry)
-        # auto_ack=False so we ack only after successful republish
         self.channel_consumer.basic_consume(queue=self.pedido_confirmado_dead_queue,
                                             on_message_callback=self.dl_order_confirmed_callback,
                                             auto_ack=False)
 
-        # original exchange declaration
         self.channel_consumer.exchange_declare(exchange='pedido_confirmado_exchange',
                                             exchange_type='topic',
                                             durable=True)
         
-        # processing queue WITH arguments so messages that expire (timeout) go to DLX
         arguments = {
-            'x-message-ttl': 30000,                 # if message expires in queue, it goes to pedido_confirmado_dlx
+            'x-message-ttl': 30000,
             'x-dead-letter-exchange': 'pedido_confirmado_dlx'
         }
 
