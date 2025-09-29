@@ -1,14 +1,16 @@
+import json
 import random
 import time
 import pika
 import uuid
 import threading
+from client.src.simple_order import SimpleOrder
 from core.settings import settings
-from order.src.order_service import OrderService
 
 class DeliveryService:
     def __init__(self):
         self.service_id = str(uuid.uuid4())[:8]
+        self.orders = {}
 
         credentials = pika.PlainCredentials(
             settings.rabbitmq_user, 
@@ -26,22 +28,44 @@ class DeliveryService:
         self.__producer_service_setup(parameters)
 
         self._consume_thread = None
-        print(f"[Entrega {self.service_id}] Serviço iniciado. Aguardando mensagens...")
+        print(f"[Entregas {self.service_id}] Serviço iniciado.")
 
     def __consumer_service_setup(self, parameters):
         self.connection_consumer = pika.BlockingConnection(parameters)
         self.channel_consumer = self.connection_consumer.channel()
         
+        self.channel_consumer.exchange_declare(exchange='pedido_confirmado_dlx',
+                                              exchange_type='fanout',
+                                              durable=True)
+
+        self.pedido_confirmado_dead_queue = self.channel_consumer.queue_declare(
+            queue='pedido_confirmado_dead_queue', durable=True
+        ).method.queue
+
+        self.channel_consumer.queue_bind(exchange='pedido_confirmado_dlx',
+                                        queue=self.pedido_confirmado_dead_queue)
+
+        self.channel_consumer.basic_consume(queue=self.pedido_confirmado_dead_queue,
+                                            on_message_callback=self.dl_order_confirmed_callback,
+                                            auto_ack=False)
+
         self.channel_consumer.exchange_declare(exchange='pedido_confirmado_exchange',
                                             exchange_type='topic',
                                             durable=True)
         
+        arguments = {
+            'x-message-ttl': 30000,
+            'x-dead-letter-exchange': 'pedido_confirmado_dlx'
+        }
+
         self.pedido_confirmado_queue = self.channel_consumer.queue_declare(
-            queue='pedido_confirmado_queue', durable=True
+            queue='confirmado_entregador_queue', durable=True, arguments=arguments
         ).method.queue
+        
         self.channel_consumer.queue_bind(exchange='pedido_confirmado_exchange',
                                         queue=self.pedido_confirmado_queue,
-                                        routing_key='pedido.confirmado.entregador')     
+                                        routing_key='pedido.confirmado.*')     
+        
         self.channel_consumer.basic_consume(queue=self.pedido_confirmado_queue,
                                             on_message_callback=self.order_confirmed_callback,
                                             auto_ack=False)
@@ -54,43 +78,135 @@ class DeliveryService:
                                                 exchange_type='topic',
                                                 durable=True)
 
-    def send_delivery(self, received_body):
+    def send_delivery(self, order: SimpleOrder):
+        if order.status != "CONFIRMADO":
+            print(f"[Entregas {self.service_id}] Pedido {order.order_id} não confirmado.")
+            return
+                  
+        order_id = order.order_id    
+        self.update_order_status(order_id, "EM ROTA")
+        self.print_order_status(order_id)
+        
         self.channel_publisher.basic_publish(
             exchange='entrega_exchange',
-            routing_key='entrega.1',
-            body=f'Entrega: {received_body.decode()}',
+            routing_key='entrega.todos',
+            body=self.orders[order.order_id].model_dump_json(),
             properties=pika.BasicProperties(
                 delivery_mode=pika.DeliveryMode.Persistent
             ))
+            
+        time.sleep(random.randint(15, 25))
+    
+        order_id = order.order_id 
+        self.update_order_status(order_id, "ENTREGUE")
+        self.print_order_status(order_id)
+        
+        self.channel_publisher.basic_publish(
+            exchange='entrega_exchange',
+            routing_key='entrega.todos',
+            body=self.orders[order.order_id].model_dump_json(),
+            properties=pika.BasicProperties(
+                delivery_mode=pika.DeliveryMode.Persistent
+            ))              
 
     def order_confirmed_callback(self, ch, method, properties, body):
-        print(f"[Entrega {self.service_id}] Pedido mensagem recebida: {body.decode()}")
+        order_json = json.loads(body)
+        order_object = SimpleOrder(**order_json)
+        
+        if self.orders.get(order_object.order_id) is None:
+            self.orders[order_object.order_id] = order_object
+            
+        if self.orders[order_object.order_id].status in ["RECEBIDO", "FINALIZADO"]:
+            print(f"[Entregas {self.service_id}] Pedido {order_object.order_id} já foi finalizado.")
+            ch.basic_ack(delivery_tag=method.delivery_tag)
+            return
+        
         time.sleep(random.randint(3, 15))
+        
+        order_id = order_object.order_id
+        self.update_order_status(order_id, order_object.status)    
+        self.print_order_status(order_id)
+
+        time.sleep(random.randint(3, 15))
+        
         ch.basic_ack(delivery_tag=method.delivery_tag)
 
-        self.send_delivery(body)
+        self.send_delivery(order_object)
+
+    def _extract_original_routing_key(self, properties, default):
+        try:
+            headers = properties.headers or {}
+            x_death = headers.get('x-death')
+            if x_death and isinstance(x_death, list) and len(x_death) > 0:
+                first = x_death[0]
+                if 'routing-keys' in first and isinstance(first['routing-keys'], list) and len(first['routing-keys']) > 0:
+                    return first['routing-keys'][0]
+                if 'routing_key' in first:
+                    return first['routing_key']
+        except Exception:
+            pass
+        return default
+
+    def dl_order_confirmed_callback(self, ch, method, properties, body):
+        routing_key = self._extract_original_routing_key(properties, default='pedido.confirmado.retry')
+        try:
+            self.channel_publisher.basic_publish(
+                exchange='pedido_confirmado_exchange',
+                routing_key=routing_key,
+                body=body,
+                properties=pika.BasicProperties(
+                    delivery_mode=pika.DeliveryMode.Persistent,
+                    headers=properties.headers
+                )
+            )
+            print(f"[Entregas {self.service_id}] Mensagem da DLQ pedido_confirmado republicada para pedido_confirmado_exchange ({routing_key}).")
+            ch.basic_ack(delivery_tag=method.delivery_tag)
+        except Exception as e:
+            print(f"[Entregas {self.service_id}] Falha ao republicar da DLQ pedido_confirmado: {e}. Requeue na DLQ.")
+            ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
+        
+    def update_order_status(self, order_id: str, new_status: str):
+        order = self.orders[order_id]
+        if order:
+            order.status = new_status
+
+    def print_order_status(self, order_id: str):
+        order_object = self.orders[order_id]
+        if order_object is not None:
+            print(f"[Entregas {self.service_id}] Pedido {order_object.order_id} {order_object.status}.")
 
     def listen(self):
         self.channel_consumer.start_consuming()
+        print(f"[Entregas {self.service_id}] Aguardando atualizações...")
 
     def run(self):
-        threading.Thread(target=self.listen, daemon=True).start()
+        consumer_thread = threading.Thread(target=self.listen, daemon=True)
+        consumer_thread.start()
         
         try:
             while True:
                 user_input = input(
-                    f"[Entrega {self.service_id}] Pressione 'q' para sair: ")
+                    f"[Entregas {self.service_id}] Pressione 'q' para sair.\n")
                 
                 if user_input.lower() == 'q':
-                    print(f"[Entrega {self.service_id}] Encerrando.")
+                    print(f"[Entregas {self.service_id}] Encerrando.")
                     break
                 
         except KeyboardInterrupt:
-            print(f"\n[Entrega {self.service_id}] Keyboard interruption.")
+            print(f"\n[Entregas {self.service_id}] Keyboard interruption.")
         
         finally:
-            self.connection_consumer.close()
-            print(f"[Entrega {self.service_id}] Conexão fechada.")
+            if self.channel_consumer.is_open:
+                self.channel_consumer.connection.add_callback_threadsafe(
+                    lambda: self.channel_consumer.stop_consuming()  
+                )
+
+            consumer_thread.join()
+            
+            if self.connection_consumer.is_open:
+                self.connection_consumer.close()
+                
+            print(f"[Entregas {self.service_id}] Conexão fechada.")
 
 if __name__ == '__main__':
     svc = DeliveryService()
