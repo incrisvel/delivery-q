@@ -176,8 +176,8 @@ class DeliveryService:
             print(f"[Entregas {self.service_id}] Pedido {order_object.order_id} {order_object.status}.")
 
     def listen(self):
-        self.channel_consumer.start_consuming()
         print(f"[Entregas {self.service_id}] Aguardando atualizações...")
+        self.channel_consumer.start_consuming()
 
     def run(self):
         consumer_thread = threading.Thread(target=self.listen, daemon=True)
